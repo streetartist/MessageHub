@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+
+{% block title %}AI 总结 - QQ 聊天 AI 助手{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media (max-width: 768px) {
+        .text-truncate {
+            max-width: 60vw !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-file-text"></i> AI 总结</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
+        <i class="bi bi-magic"></i> 生成新总结
+    </button>
+</div>
+
+<!-- 筛选区域 -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">选择聊天</label>
+                <select class="form-select" id="filter-chat" onchange="loadSummaries()">
+                    <option value="">全部聊天</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">开始日期</label>
+                <input type="date" class="form-control" id="filter-start-date" onchange="loadSummaries()">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">结束日期</label>
+                <input type="date" class="form-control" id="filter-end-date" onchange="loadSummaries()">
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                    <i class="bi bi-x-circle"></i> 清除筛选
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 总结列表 -->
+<div class="card">
+    <div class="card-header">
+        <span>总结历史</span>
+    </div>
+    <div class="card-body">
+        <div id="summaries-list">
+            <div class="text-center text-muted py-5">
+                <div class="spinner-border" role="status"></div>
+                <p class="mt-2">加载中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 生成总结对话框 -->
+<div class="modal fade" id="generateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-magic"></i> 生成 AI 总结</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="generate-form">
+                    <div class="mb-3">
+                        <label class="form-label">选择聊天</label>
+                        <select class="form-select" id="gen-chat-id">
+                            <option value="">全部聊天</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">时间筛选方式</label>
+                        <select class="form-select" id="gen-time-mode" onchange="toggleTimeMode()">
+                            <option value="days">最近N天</option>
+                            <option value="range">指定日期范围</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="days-input">
+                        <label class="form-label">天数</label>
+                        <input type="number" class="form-control" id="gen-days" value="1" min="1" max="30">
+                    </div>
+                    <div id="date-range-input" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">开始日期</label>
+                            <input type="date" class="form-control" id="gen-start-date">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">结束日期</label>
+                            <input type="date" class="form-control" id="gen-end-date">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="generateSummary()">
+                    <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+                    生成总结
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 查看总结详情对话框 -->
+<div class="modal fade" id="viewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-text"></i> 总结详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <small class="text-muted">
+                        时间范围: <span id="view-date-range"></span>
+                    </small>
+                </div>
+                <div id="view-summary-content" class="border rounded p-3 bg-light" style="white-space: pre-wrap;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let monitoredChats = [];
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        await loadChatsForFilter();
+        await loadSummaries();
+    });
+
+    async function loadChatsForFilter() {
+        const data = await apiCall('/api/monitored-chats');
+        monitoredChats = data.chats;
+
+        const filterSelect = document.getElementById('filter-chat');
+        const genSelect = document.getElementById('gen-chat-id');
+
+        monitoredChats.forEach(chat => {
+            const option1 = new Option(chat.name, chat.id);
+            const option2 = new Option(chat.name, chat.id);
+            filterSelect.add(option1);
+            genSelect.add(option2);
+        });
+    }
+
+    async function loadSummaries() {
+        const chatId = document.getElementById('filter-chat').value;
+        const startDate = document.getElementById('filter-start-date').value;
+        const endDate = document.getElementById('filter-end-date').value;
+
+        const params = new URLSearchParams();
+        if (chatId) params.append('chat_id', chatId);
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+
+        const url = '/api/summaries' + (params.toString() ? '?' + params.toString() : '');
+        const data = await apiCall(url);
+        renderSummaries(data.summaries);
+    }
+
+    function clearFilters() {
+        document.getElementById('filter-chat').value = '';
+        document.getElementById('filter-start-date').value = '';
+        document.getElementById('filter-end-date').value = '';
+        loadSummaries();
+    }
+
+    function renderSummaries(summaries) {
+        const container = document.getElementById('summaries-list');
+
+        if (summaries.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <p class="mt-2">暂无 AI 总结</p>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#generateModal">
+                        <i class="bi bi-magic"></i> 生成第一个总结
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="list-group">
+                ${summaries.map(s => {
+                    const chat = monitoredChats.find(c => c.id === s.chat_id);
+                    return `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge bg-info me-2">${s.summary_type}</span>
+                                        ${chat ? `<span class="badge bg-secondary">${chat.name}</span>` : '<span class="badge bg-secondary">全部聊天</span>'}
+                                    </div>
+                                    <p class="mb-1 text-truncate" style="max-width: 600px;">${s.summary_text}</p>
+                                    <small class="text-muted">
+                                        ${new Date(s.date_range_start).toLocaleDateString()} - ${new Date(s.date_range_end).toLocaleDateString()}
+                                        | 创建于 ${new Date(s.created_at).toLocaleString()}
+                                    </small>
+                                </div>
+                                <div class="btn-group">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="viewSummary(${JSON.stringify(s).replace(/"/g, '&quot;')})">
+                                        <i class="bi bi-eye"></i> 查看
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="deleteSummary(${s.id})">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function toggleTimeMode() {
+        const mode = document.getElementById('gen-time-mode').value;
+        document.getElementById('days-input').style.display = mode === 'days' ? 'block' : 'none';
+        document.getElementById('date-range-input').style.display = mode === 'range' ? 'block' : 'none';
+
+        // 设置默认日期
+        if (mode === 'range') {
+            const today = new Date().toISOString().split('T')[0];
+            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            if (!document.getElementById('gen-start-date').value) {
+                document.getElementById('gen-start-date').value = weekAgo;
+            }
+            if (!document.getElementById('gen-end-date').value) {
+                document.getElementById('gen-end-date').value = today;
+            }
+        }
+    }
+
+    async function generateSummary() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const chatId = document.getElementById('gen-chat-id').value;
+            const timeMode = document.getElementById('gen-time-mode').value;
+
+            let requestBody = { chat_id: chatId || null };
+
+            if (timeMode === 'days') {
+                requestBody.days = parseInt(document.getElementById('gen-days').value);
+            } else {
+                requestBody.start_date = document.getElementById('gen-start-date').value;
+                requestBody.end_date = document.getElementById('gen-end-date').value;
+
+                if (!requestBody.start_date || !requestBody.end_date) {
+                    showToast('请选择开始和结束日期', 'warning');
+                    return;
+                }
+            }
+
+            const result = await apiCall('/api/generate-summary', {
+                method: 'POST',
+                body: JSON.stringify(requestBody)
+            });
+
+            if (result.success) {
+                showToast('总结已生成');
+                bootstrap.Modal.getInstance(document.getElementById('generateModal')).hide();
+                loadSummaries();
+            } else {
+                showToast(result.error || '生成失败', 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    function viewSummary(summary) {
+        document.getElementById('view-date-range').textContent =
+            `${new Date(summary.date_range_start).toLocaleString()} - ${new Date(summary.date_range_end).toLocaleString()}`;
+        document.getElementById('view-summary-content').textContent = summary.summary_text;
+
+        const modal = new bootstrap.Modal(document.getElementById('viewModal'));
+        modal.show();
+    }
+
+    async function deleteSummary(summaryId) {
+        if (!confirm('确定要删除这条总结吗？')) {
+            return;
+        }
+
+        try {
+            const result = await apiCall(`/api/summaries/${summaryId}`, {
+                method: 'DELETE'
+            });
+
+            if (result.success) {
+                showToast('总结已删除');
+                loadSummaries();
+            } else {
+                showToast(result.error || '删除失败', 'danger');
+            }
+        } catch (e) {
+            showToast('删除失败: ' + e.message, 'danger');
+        }
+    }
+</script>
+{% endblock %}

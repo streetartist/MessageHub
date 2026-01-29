@@ -1,0 +1,44 @@
+name: napcat_assistant
+description: NapCat QQ聊天记录AI助手
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 网络请求
+  dio: ^5.4.0
+
+  # 状态管理
+  provider: ^6.1.1
+
+  # 本地存储
+  shared_preferences: ^2.2.2
+
+  # UI组件
+  cupertino_icons: ^1.0.6
+  flutter_slidable: ^4.0.3
+  pull_to_refresh: ^2.0.0
+
+  # 日历
+  table_calendar: ^3.2.0
+
+  # 时间处理
+  intl: ^0.20.2
+
+  # 下拉刷新
+  easy_refresh: ^3.3.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

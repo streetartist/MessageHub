@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘 - QQ 聊天 AI 助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2"></i> 仪表盘</h2>
+    <div class="btn-group">
+        <button class="btn btn-primary" onclick="fetchMessagesNow()">
+            <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+            <i class="bi bi-arrow-clockwise"></i> 获取消息
+        </button>
+        <button class="btn btn-success" onclick="analyzeAllTasks()">
+            <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+            <i class="bi bi-robot"></i> AI 提取任务
+        </button>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary bg-opacity-10 rounded-circle p-3">
+                            <i class="bi bi-chat-dots text-primary fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">监控聊天</h6>
+                        <h3 class="mb-0" id="stat-chats">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success bg-opacity-10 rounded-circle p-3">
+                            <i class="bi bi-envelope text-success fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">消息总数</h6>
+                        <h3 class="mb-0" id="stat-messages">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-warning bg-opacity-10 rounded-circle p-3">
+                            <i class="bi bi-list-task text-warning fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">待办任务</h6>
+                        <h3 class="mb-0" id="stat-tasks">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-info bg-opacity-10 rounded-circle p-3">
+                            <i class="bi bi-file-text text-info fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">AI 总结</h6>
+                        <h3 class="mb-0" id="stat-summaries">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 待办任务 -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list-task"></i> 待办任务</span>
+                <a href="/schedule" class="btn btn-sm btn-outline-primary">查看全部</a>
+            </div>
+            <div class="card-body">
+                <div id="tasks-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1"></i>
+                        <p class="mt-2">暂无待办任务</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最近总结 -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-text"></i> 最近总结</span>
+                <a href="/summaries" class="btn btn-sm btn-outline-primary">查看全部</a>
+            </div>
+            <div class="card-body">
+                <div id="summaries-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1"></i>
+                        <p class="mt-2">暂无 AI 总结</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 监控的聊天 -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-chat-dots"></i> 监控的聊天</span>
+        <a href="/chats" class="btn btn-sm btn-outline-primary">管理</a>
+    </div>
+    <div class="card-body">
+        <div id="chats-list">
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-inbox fs-1"></i>
+                <p class="mt-2">暂无监控的聊天</p>
+                <a href="/chats" class="btn btn-primary">添加聊天</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        loadDashboardData();
+    });
+
+    async function loadDashboardData() {
+        // 加载监控聊天
+        const chatsData = await apiCall('/api/monitored-chats');
+        document.getElementById('stat-chats').textContent = chatsData.chats.length;
+        renderChatsList(chatsData.chats);
+
+        // 加载任务
+        const tasksData = await apiCall('/api/tasks?status=pending');
+        document.getElementById('stat-tasks').textContent = tasksData.tasks.length;
+        renderTasksList(tasksData.tasks.slice(0, 5));
+
+        // 加载总结
+        const summariesData = await apiCall('/api/summaries?per_page=5');
+        document.getElementById('stat-summaries').textContent = summariesData.total;
+        renderSummariesList(summariesData.summaries);
+
+        // 计算消息总数（简化处理）
+        let totalMessages = 0;
+        for (const chat of chatsData.chats) {
+            const msgData = await apiCall(`/api/messages/${chat.id}?per_page=1`);
+            totalMessages += msgData.total;
+        }
+        document.getElementById('stat-messages').textContent = totalMessages;
+    }
+
+    function renderChatsList(chats) {
+        const container = document.getElementById('chats-list');
+        if (chats.length === 0) return;
+
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>名称</th>
+                            <th>类型</th>
+                            <th>状态</th>
+                            <th>最后获取</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${chats.map(chat => `
+                            <tr>
+                                <td>${chat.name}</td>
+                                <td><span class="badge bg-${chat.chat_type === 2 ? 'primary' : 'success'}">${chat.chat_type === 2 ? '群聊' : '私聊'}</span></td>
+                                <td><span class="badge bg-${chat.enabled ? 'success' : 'secondary'}">${chat.enabled ? '启用' : '禁用'}</span></td>
+                                <td>${chat.last_fetch_time ? new Date(chat.last_fetch_time).toLocaleString() : '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderTasksList(tasks) {
+        const container = document.getElementById('tasks-list');
+        if (tasks.length === 0) return;
+
+        container.innerHTML = `
+            <ul class="list-group list-group-flush">
+                ${tasks.map(task => `
+                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-bold priority-${task.priority}">${task.title}</div>
+                            <small class="text-muted">${task.deadline ? '截止: ' + new Date(task.deadline).toLocaleString() : '无截止时间'}</small>
+                        </div>
+                        <span class="badge bg-${task.priority <= 2 ? 'danger' : task.priority === 3 ? 'warning' : 'secondary'}">
+                            P${task.priority}
+                        </span>
+                    </li>
+                `).join('')}
+            </ul>
+        `;
+    }
+
+    function renderSummariesList(summaries) {
+        const container = document.getElementById('summaries-list');
+        if (summaries.length === 0) return;
+
+        container.innerHTML = `
+            <ul class="list-group list-group-flush">
+                ${summaries.map(s => `
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <small class="text-muted">${new Date(s.created_at).toLocaleString()}</small>
+                            <span class="badge bg-info">${s.summary_type}</span>
+                        </div>
+                        <p class="mb-0 mt-1 text-truncate">${s.summary_text.substring(0, 100)}...</p>
+                    </li>
+                `).join('')}
+            </ul>
+        `;
+    }
+
+    async function fetchMessagesNow() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const result = await apiCall('/api/fetch-messages', { method: 'POST' });
+            if (result.success) {
+                showToast(result.message || '消息获取成功');
+                loadDashboardData();
+            } else {
+                showToast(result.error || '获取失败', 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    async function analyzeAllTasks() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            // 获取所有监控的聊天
+            const chatsData = await apiCall('/api/monitored-chats');
+            const enabledChats = chatsData.chats.filter(c => c.enabled);
+
+            if (enabledChats.length === 0) {
+                showToast('没有启用的监控聊天', 'warning');
+                return;
+            }
+
+            let totalTasks = 0;
+            let successCount = 0;
+
+            for (const chat of enabledChats) {
+                try {
+                    const result = await apiCall('/api/analyze-tasks', {
+                        method: 'POST',
+                        body: JSON.stringify({ chat_id: chat.id, days: 7 })
+                    });
+
+                    if (result.success) {
+                        totalTasks += result.tasks_count;
+                        successCount++;
+                    }
+                } catch (e) {
+                    console.error(`分析 ${chat.name} 失败:`, e);
+                }
+            }
+
+            if (totalTasks > 0) {
+                showToast(`分析完成！从 ${successCount} 个聊天中提取了 ${totalTasks} 个任务`, 'success');
+            } else {
+                showToast('分析完成，未发现新任务', 'info');
+            }
+
+            loadDashboardData();
+        } catch (e) {
+            showToast('分析失败: ' + e.message, 'danger');
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+</script>
+{% endblock %}

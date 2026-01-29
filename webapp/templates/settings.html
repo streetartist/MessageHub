@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}设置 - QQ 聊天 AI 助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-gear"></i> 设置</h2>
+</div>
+
+<div class="row">
+    <!-- AI 配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-robot"></i> AI 配置
+            </div>
+            <div class="card-body">
+                <form id="ai-settings-form">
+                    <div class="mb-3">
+                        <label class="form-label">AI API 端点</label>
+                        <input type="url" class="form-control" id="ai_endpoint"
+                               placeholder="https://api.deepseek.com/v1/chat/completions">
+                        <div class="form-text">支持 OpenAI 兼容的 API 端点</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">API Key</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="ai_api_key" placeholder="sk-...">
+                            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('ai_api_key')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">模型名称</label>
+                        <input type="text" class="form-control" id="ai_model" placeholder="deepseek-chat">
+                        <div class="form-text">常用: deepseek-chat, gpt-4, gpt-3.5-turbo</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-primary" onclick="testAIConnection()">
+                            <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+                            测试连接
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- NapCat 配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-hdd-network"></i> NapCat-QCE 配置
+            </div>
+            <div class="card-body">
+                <form id="napcat-settings-form">
+                    <!-- 令牌状态 -->
+                    <div class="mb-3">
+                        <label class="form-label">令牌状态</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="token_status" readonly placeholder="检测中...">
+                            <button class="btn btn-outline-secondary" type="button" onclick="refreshTokenStatus()">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">令牌从 NapCat-QCE 配置文件自动获取</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">主机地址</label>
+                        <input type="text" class="form-control" id="napcat_host" placeholder="localhost">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">端口</label>
+                        <input type="number" class="form-control" id="napcat_port" placeholder="40653">
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-primary" onclick="testNapCatConnection()">
+                            <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+                            测试连接
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 默认参数配置 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-sliders"></i> 默认参数
+            </div>
+            <div class="card-body">
+                <form id="schedule-settings-form">
+                    <div class="mb-3">
+                        <label class="form-label">默认获取天数</label>
+                        <input type="number" class="form-control" id="fetch_days"
+                               min="1" max="30" placeholder="1">
+                        <div class="form-text">手动获取消息时默认获取最近 N 天</div>
+                    </div>
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        定时任务请在 <a href="/auto-jobs">自动任务</a> 页面配置
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 常用 AI 端点 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning"></i> 快速配置
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">点击快速填充常用 AI 服务配置：</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary text-start" onclick="quickSetAI('deepseek')">
+                        <strong>DeepSeek</strong>
+                        <small class="d-block text-muted">api.deepseek.com - deepseek-chat</small>
+                    </button>
+                    <button class="btn btn-outline-primary text-start" onclick="quickSetAI('openai')">
+                        <strong>OpenAI</strong>
+                        <small class="d-block text-muted">api.openai.com - gpt-4</small>
+                    </button>
+                    <button class="btn btn-outline-primary text-start" onclick="quickSetAI('moonshot')">
+                        <strong>Moonshot (Kimi)</strong>
+                        <small class="d-block text-muted">api.moonshot.cn - moonshot-v1-8k</small>
+                    </button>
+                    <button class="btn btn-outline-primary text-start" onclick="quickSetAI('zhipu')">
+                        <strong>智谱 AI</strong>
+                        <small class="d-block text-muted">open.bigmodel.cn - glm-4</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 保存按钮 -->
+<div class="card">
+    <div class="card-body">
+        <button class="btn btn-primary btn-lg" onclick="saveSettings()">
+            <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+            <i class="bi bi-check-lg"></i> 保存所有设置
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const aiPresets = {
+        deepseek: {
+            endpoint: 'https://api.deepseek.com/v1/chat/completions',
+            model: 'deepseek-chat'
+        },
+        openai: {
+            endpoint: 'https://api.openai.com/v1/chat/completions',
+            model: 'gpt-4'
+        },
+        moonshot: {
+            endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+            model: 'moonshot-v1-8k'
+        },
+        zhipu: {
+            endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+            model: 'glm-4'
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSettings();
+        refreshTokenStatus();
+    });
+
+    async function loadSettings() {
+        const data = await apiCall('/api/settings');
+        document.getElementById('ai_endpoint').value = data.ai_endpoint || '';
+        document.getElementById('ai_api_key').value = data.ai_api_key || '';
+        document.getElementById('ai_model').value = data.ai_model || '';
+        document.getElementById('napcat_host').value = data.napcat_host || 'localhost';
+        document.getElementById('napcat_port').value = data.napcat_port || 40653;
+        document.getElementById('fetch_days').value = data.fetch_days || 1;
+    }
+
+    async function refreshTokenStatus() {
+        const input = document.getElementById('token_status');
+        input.value = '检测中...';
+        input.classList.remove('is-valid', 'is-invalid');
+
+        try {
+            const data = await apiCall('/api/settings/token-status');
+            if (data.has_token) {
+                input.value = data.token;
+                input.classList.add('is-valid');
+            } else {
+                input.value = '未找到令牌';
+                input.classList.add('is-invalid');
+            }
+        } catch (e) {
+            input.value = '检测失败';
+            input.classList.add('is-invalid');
+        }
+    }
+
+    async function saveSettings() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const data = {
+                ai_endpoint: document.getElementById('ai_endpoint').value,
+                ai_api_key: document.getElementById('ai_api_key').value,
+                ai_model: document.getElementById('ai_model').value,
+                napcat_host: document.getElementById('napcat_host').value,
+                napcat_port: parseInt(document.getElementById('napcat_port').value),
+                fetch_days: parseInt(document.getElementById('fetch_days').value)
+            };
+
+            const result = await apiCall('/api/settings', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+
+            if (result.success) {
+                showToast('设置已保存');
+            } else {
+                showToast('保存失败', 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    async function testAIConnection() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            // 先保存设置
+            await apiCall('/api/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ai_endpoint: document.getElementById('ai_endpoint').value,
+                    ai_api_key: document.getElementById('ai_api_key').value,
+                    ai_model: document.getElementById('ai_model').value
+                })
+            });
+
+            const result = await apiCall('/api/settings/test-ai', { method: 'POST' });
+            if (result.success) {
+                showToast(result.message, 'success');
+            } else {
+                showToast(result.message, 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    async function testNapCatConnection() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            // 先保存 NapCat 设置
+            await apiCall('/api/settings', {
+                method: 'POST',
+                body: JSON.stringify({
+                    napcat_host: document.getElementById('napcat_host').value,
+                    napcat_port: parseInt(document.getElementById('napcat_port').value)
+                })
+            });
+
+            const result = await apiCall('/api/settings/test-napcat', { method: 'POST' });
+            if (result.success) {
+                showToast(result.message, 'success');
+                refreshTokenStatus();
+            } else {
+                showToast(result.message, 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    function quickSetAI(preset) {
+        const config = aiPresets[preset];
+        if (config) {
+            document.getElementById('ai_endpoint').value = config.endpoint;
+            document.getElementById('ai_model').value = config.model;
+            showToast(`已填充 ${preset} 配置，请填写 API Key`);
+        }
+    }
+
+    function togglePassword(inputId) {
+        const input = document.getElementById(inputId);
+        input.type = input.type === 'password' ? 'text' : 'password';
+    }
+</script>
+{% endblock %}

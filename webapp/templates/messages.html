@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+
+{% block title %}聊天记录 - QQ 聊天 AI 助手{% endblock %}
+
+{% block extra_css %}
+<style>
+    .message-item {
+        border-left: 3px solid #dee2e6;
+        transition: all 0.2s;
+    }
+    .message-item:hover {
+        border-left-color: #667eea;
+        background: #f8f9fa;
+    }
+    .message-content {
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .chat-select-item {
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .chat-select-item:hover,
+    .chat-select-item.active {
+        background: #667eea;
+        color: white;
+    }
+    .search-highlight {
+        background: #fff3cd;
+        padding: 0 2px;
+    }
+
+    @media (max-width: 768px) {
+        .col-md-3 {
+            margin-bottom: 1rem;
+        }
+        #chat-list {
+            max-height: 250px !important;
+        }
+        #messages-container {
+            height: calc(100vh - 450px) !important;
+            min-height: 300px;
+        }
+        
+        /* Fix nested flexbox for mobile */
+        .card-header > .d-flex {
+            flex-direction: column;
+            align-items: stretch !important;
+            gap: 1rem;
+        }
+        
+        .card-header .d-flex.gap-2 {
+            flex-direction: column;
+            width: 100%;
+        }
+        
+        .input-group, #filter-date {
+            width: 100% !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-chat-square-text"></i> 聊天记录</h2>
+    <button class="btn btn-primary" onclick="fetchMessagesNow()">
+        <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+        <i class="bi bi-arrow-clockwise"></i> 立即获取
+    </button>
+</div>
+
+<div class="row">
+    <!-- 左侧：聊天列表 -->
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-chat-dots"></i> 聊天列表
+            </div>
+            <div class="list-group list-group-flush" id="chat-list" style="max-height: 600px; overflow-y: auto;">
+                <div class="text-center text-muted py-4">
+                    <div class="spinner-border spinner-border-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：消息列表 -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-envelope"></i> <span id="current-chat-name">选择聊天查看消息</span></span>
+                    <div class="d-flex gap-2">
+                        <!-- 搜索框 -->
+                        <div class="input-group input-group-sm" style="width: 250px;">
+                            <input type="text" class="form-control" id="search-keyword" placeholder="搜索消息...">
+                            <button class="btn btn-outline-secondary" onclick="searchMessages()">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                        <!-- 日期筛选 -->
+                        <input type="date" class="form-control form-control-sm" id="filter-date" style="width: 150px;" onchange="loadMessages()">
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="messages-container" style="height: 500px; overflow-y: auto;">
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-chat-left-text fs-1"></i>
+                        <p class="mt-2">请从左侧选择一个聊天</p>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        共 <span id="total-messages">0</span> 条消息
+                    </small>
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="card mt-3" id="stats-card" style="display: none;">
+            <div class="card-header">
+                <i class="bi bi-bar-chart"></i> 统计信息
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h4 id="stat-total">0</h4>
+                        <small class="text-muted">总消息数</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 id="stat-today">0</h4>
+                        <small class="text-muted">今日消息</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 id="stat-senders">0</h4>
+                        <small class="text-muted">发送者数</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 id="stat-days">0</h4>
+                        <small class="text-muted">记录天数</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentChatId = null;
+    let currentPage = 1;
+    let searchKeyword = '';
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadChatList();
+
+        // 回车搜索
+        document.getElementById('search-keyword').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') searchMessages();
+        });
+    });
+
+    async function loadChatList() {
+        const data = await apiCall('/api/monitored-chats');
+        renderChatList(data.chats);
+    }
+
+    function renderChatList(chats) {
+        const container = document.getElementById('chat-list');
+
+        if (chats.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <p>暂无监控的聊天</p>
+                    <a href="/chats" class="btn btn-sm btn-primary">添加聊天</a>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = chats.map(chat => `
+            <a href="#" class="list-group-item list-group-item-action chat-select-item ${currentChatId === chat.id ? 'active' : ''}"
+               onclick="selectChat(${chat.id}, '${chat.name}'); return false;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-${chat.chat_type === 2 ? 'people' : 'person'}"></i>
+                        ${chat.name}
+                    </div>
+                    <span class="badge bg-${chat.chat_type === 2 ? 'primary' : 'success'} rounded-pill">
+                        ${chat.chat_type === 2 ? '群' : '私'}
+                    </span>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    ${chat.last_fetch_time ? '更新: ' + new Date(chat.last_fetch_time).toLocaleString() : '未获取'}
+                </small>
+            </a>
+        `).join('');
+    }
+
+    function selectChat(chatId, chatName) {
+        currentChatId = chatId;
+        currentPage = 1;
+        searchKeyword = '';
+        document.getElementById('search-keyword').value = '';
+        document.getElementById('filter-date').value = '';
+        document.getElementById('current-chat-name').textContent = chatName;
+        document.getElementById('stats-card').style.display = 'block';
+
+        // 更新选中状态
+        document.querySelectorAll('.chat-select-item').forEach(el => el.classList.remove('active'));
+        event.target.closest('.chat-select-item').classList.add('active');
+
+        loadMessages();
+        loadStats();
+    }
+
+    async function loadMessages() {
+        if (!currentChatId) return;
+
+        const filterDate = document.getElementById('filter-date').value;
+        let url = `/api/messages/${currentChatId}?page=${currentPage}&per_page=50`;
+
+        if (searchKeyword) {
+            url += `&keyword=${encodeURIComponent(searchKeyword)}`;
+        }
+        if (filterDate) {
+            url += `&date=${filterDate}`;
+        }
+
+        const data = await apiCall(url);
+        renderMessages(data.messages);
+        renderPagination(data.total, data.pages, data.current_page);
+        document.getElementById('total-messages').textContent = data.total;
+    }
+
+    function renderMessages(messages) {
+        const container = document.getElementById('messages-container');
+
+        if (messages.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <p class="mt-2">暂无消息</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = messages.map(msg => {
+            let content = msg.content || '<i class="text-muted">[无文本内容]</i>';
+            // 高亮搜索关键词
+            if (searchKeyword && msg.content) {
+                const regex = new RegExp(`(${escapeRegex(searchKeyword)})`, 'gi');
+                content = msg.content.replace(regex, '<span class="search-highlight">$1</span>');
+            }
+
+            return `
+                <div class="message-item p-3 border-bottom">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <strong class="text-primary">${msg.sender_name}</strong>
+                        <small class="text-muted">${new Date(msg.msg_time).toLocaleString()}</small>
+                    </div>
+                    <div class="message-content">${content}</div>
+                </div>
+            `;
+        }).join('');
+
+        // 滚动到顶部
+        container.scrollTop = 0;
+    }
+
+    function renderPagination(total, pages, current) {
+        const container = document.getElementById('pagination');
+
+        if (pages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+
+        // 上一页
+        html += `<li class="page-item ${current === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${current - 1}); return false;">&laquo;</a>
+        </li>`;
+
+        // 页码
+        const startPage = Math.max(1, current - 2);
+        const endPage = Math.min(pages, current + 2);
+
+        if (startPage > 1) {
+            html += `<li class="page-item"><a class="page-link" href="#" onclick="goToPage(1); return false;">1</a></li>`;
+            if (startPage > 2) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="goToPage(${i}); return false;">${i}</a>
+            </li>`;
+        }
+
+        if (endPage < pages) {
+            if (endPage < pages - 1) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+            html += `<li class="page-item"><a class="page-link" href="#" onclick="goToPage(${pages}); return false;">${pages}</a></li>`;
+        }
+
+        // 下一页
+        html += `<li class="page-item ${current === pages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${current + 1}); return false;">&raquo;</a>
+        </li>`;
+
+        container.innerHTML = html;
+    }
+
+    function goToPage(page) {
+        currentPage = page;
+        loadMessages();
+    }
+
+    function searchMessages() {
+        searchKeyword = document.getElementById('search-keyword').value.trim();
+        currentPage = 1;
+        loadMessages();
+    }
+
+    async function loadStats() {
+        if (!currentChatId) return;
+
+        const data = await apiCall(`/api/messages/${currentChatId}/stats`);
+        if (data.success !== false) {
+            document.getElementById('stat-total').textContent = data.total || 0;
+            document.getElementById('stat-today').textContent = data.today || 0;
+            document.getElementById('stat-senders').textContent = data.senders || 0;
+            document.getElementById('stat-days').textContent = data.days || 0;
+        }
+    }
+
+    async function fetchMessagesNow() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const result = await apiCall('/api/fetch-messages', { method: 'POST' });
+            if (result.success) {
+                showToast(result.message || '获取成功');
+                loadChatList();
+                if (currentChatId) {
+                    loadMessages();
+                    loadStats();
+                }
+            } else {
+                showToast(result.error || '获取失败', 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    function escapeRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+</script>
+{% endblock %}

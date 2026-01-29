@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+
+{% block title %}自动任务 - QQ 聊天 AI 助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-clock-history"></i> 自动任务</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#jobModal" onclick="openCreateModal()">
+        <i class="bi bi-plus-lg"></i> 新建任务
+    </button>
+</div>
+
+<!-- 任务列表 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-check"></i> 任务列表
+    </div>
+    <div class="card-body">
+        <div id="jobs-list">
+            <div class="text-center text-muted py-5">
+                <div class="spinner-border" role="status"></div>
+                <p class="mt-2">加载中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新建/编辑任务对话框 -->
+<div class="modal fade" id="jobModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="jobModalTitle"><i class="bi bi-plus-circle"></i> 新建自动任务</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="job-form">
+                    <input type="hidden" id="job-id">
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">任务名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="job-name" required placeholder="例如：每小时获取消息">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">任务类型 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="job-type" required onchange="onJobTypeChange()">
+                                <option value="fetch_messages">获取聊天消息</option>
+                                <option value="ai_summary">AI 总结</option>
+                                <option value="extract_tasks">提取任务</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <h6 class="text-muted mb-3"><i class="bi bi-clock"></i> 调度设置</h6>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">调度类型</label>
+                            <select class="form-select" id="schedule-type" onchange="onScheduleTypeChange()">
+                                <option value="interval">间隔执行</option>
+                                <option value="cron">定时执行</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3" id="interval-config">
+                            <label class="form-label">执行间隔（分钟）</label>
+                            <input type="number" class="form-control" id="interval-minutes" min="5" max="1440" value="60">
+                            <div class="form-text">最小 5 分钟，最大 1440 分钟（24小时）</div>
+                        </div>
+                        <div class="col-md-6 mb-3 d-none" id="cron-config">
+                            <label class="form-label">执行时间</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="cron-hour" min="0" max="23" value="22" placeholder="时">
+                                <span class="input-group-text">:</span>
+                                <input type="number" class="form-control" id="cron-minute" min="0" max="59" value="0" placeholder="分">
+                            </div>
+                            <div class="form-text">每天在指定时间执行</div>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <h6 class="text-muted mb-3"><i class="bi bi-sliders"></i> 任务参数</h6>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">目标聊天</label>
+                            <select class="form-select" id="job-chat-id">
+                                <option value="">全部监控的聊天</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">处理天数</label>
+                            <input type="number" class="form-control" id="job-days" min="1" max="30" value="1">
+                            <div class="form-text">处理最近 N 天的数据</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="extract-tasks-option">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="job-extract-tasks" checked>
+                            <label class="form-check-label" for="job-extract-tasks">
+                                同时提取任务（仅 AI 总结时有效）
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveJob()">
+                    <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+                    保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let monitoredChats = [];
+    let editingJobId = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadJobs();
+        loadChats();
+    });
+
+    async function loadJobs() {
+        const data = await apiCall('/api/auto-jobs');
+        renderJobs(data.jobs);
+    }
+
+    async function loadChats() {
+        const data = await apiCall('/api/monitored-chats');
+        monitoredChats = data.chats;
+
+        const select = document.getElementById('job-chat-id');
+        select.innerHTML = '<option value="">全部监控的聊天</option>';
+        monitoredChats.forEach(chat => {
+            select.innerHTML += `<option value="${chat.id}">${chat.name}</option>`;
+        });
+    }
+
+    function renderJobs(jobs) {
+        const container = document.getElementById('jobs-list');
+
+        if (jobs.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <p class="mt-2">暂无自动任务</p>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#jobModal" onclick="openCreateModal()">
+                        <i class="bi bi-plus-lg"></i> 创建第一个任务
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        const jobTypeLabels = {
+            'fetch_messages': '<span class="badge bg-primary">获取消息</span>',
+            'ai_summary': '<span class="badge bg-success">AI 总结</span>',
+            'extract_tasks': '<span class="badge bg-warning">提取任务</span>'
+        };
+
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>任务名称</th>
+                            <th>类型</th>
+                            <th>调度</th>
+                            <th>状态</th>
+                            <th>上次执行</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${jobs.map(job => `
+                            <tr>
+                                <td><strong>${job.name}</strong></td>
+                                <td>${jobTypeLabels[job.job_type] || job.job_type}</td>
+                                <td>
+                                    ${job.schedule_type === 'interval'
+                                        ? `每 ${job.interval_minutes} 分钟`
+                                        : `每天 ${String(job.cron_hour).padStart(2,'0')}:${String(job.cron_minute).padStart(2,'0')}`
+                                    }
+                                </td>
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox"
+                                               ${job.enabled ? 'checked' : ''}
+                                               onchange="toggleJob(${job.id})">
+                                    </div>
+                                </td>
+                                <td>
+                                    ${job.last_run_time
+                                        ? `<small class="text-${job.last_run_status === 'success' ? 'success' : 'danger'}">
+                                             ${new Date(job.last_run_time).toLocaleString()}
+                                             <br>${job.last_run_message || ''}
+                                           </small>`
+                                        : '<small class="text-muted">从未执行</small>'
+                                    }
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" onclick="runJobNow(${job.id})" title="立即执行">
+                                            <i class="bi bi-play-fill"></i>
+                                        </button>
+                                        <button class="btn btn-outline-primary" onclick="editJob(${job.id})" title="编辑">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" onclick="deleteJob(${job.id})" title="删除">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function openCreateModal() {
+        editingJobId = null;
+        document.getElementById('jobModalTitle').innerHTML = '<i class="bi bi-plus-circle"></i> 新建自动任务';
+        document.getElementById('job-form').reset();
+        document.getElementById('job-id').value = '';
+        onScheduleTypeChange();
+        onJobTypeChange();
+    }
+
+    async function editJob(jobId) {
+        const data = await apiCall('/api/auto-jobs');
+        const job = data.jobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        editingJobId = jobId;
+        document.getElementById('jobModalTitle').innerHTML = '<i class="bi bi-pencil"></i> 编辑自动任务';
+        document.getElementById('job-id').value = job.id;
+        document.getElementById('job-name').value = job.name;
+        document.getElementById('job-type').value = job.job_type;
+        document.getElementById('schedule-type').value = job.schedule_type;
+        document.getElementById('interval-minutes').value = job.interval_minutes;
+        document.getElementById('cron-hour').value = job.cron_hour;
+        document.getElementById('cron-minute').value = job.cron_minute;
+        document.getElementById('job-chat-id').value = job.chat_id || '';
+        document.getElementById('job-days').value = job.days;
+        document.getElementById('job-extract-tasks').checked = job.extract_tasks;
+
+        onScheduleTypeChange();
+        onJobTypeChange();
+
+        const modal = new bootstrap.Modal(document.getElementById('jobModal'));
+        modal.show();
+    }
+
+    async function saveJob() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const data = {
+                name: document.getElementById('job-name').value,
+                job_type: document.getElementById('job-type').value,
+                schedule_type: document.getElementById('schedule-type').value,
+                interval_minutes: parseInt(document.getElementById('interval-minutes').value),
+                cron_hour: parseInt(document.getElementById('cron-hour').value),
+                cron_minute: parseInt(document.getElementById('cron-minute').value),
+                chat_id: document.getElementById('job-chat-id').value || null,
+                days: parseInt(document.getElementById('job-days').value),
+                extract_tasks: document.getElementById('job-extract-tasks').checked
+            };
+
+            let result;
+            if (editingJobId) {
+                result = await apiCall(`/api/auto-jobs/${editingJobId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                });
+            } else {
+                result = await apiCall('/api/auto-jobs', {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+            }
+
+            if (result.success) {
+                showToast(editingJobId ? '任务已更新' : '任务已创建');
+                bootstrap.Modal.getInstance(document.getElementById('jobModal')).hide();
+                loadJobs();
+            } else {
+                showToast(result.error || '保存失败', 'danger');
+            }
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    async function toggleJob(jobId) {
+        const result = await apiCall(`/api/auto-jobs/${jobId}/toggle`, { method: 'POST' });
+        if (result.success) {
+            showToast(result.enabled ? '任务已启用' : '任务已禁用');
+            loadJobs();
+        }
+    }
+
+    async function deleteJob(jobId) {
+        if (!confirm('确定要删除此任务吗？')) return;
+
+        const result = await apiCall(`/api/auto-jobs/${jobId}`, { method: 'DELETE' });
+        if (result.success) {
+            showToast('任务已删除');
+            loadJobs();
+        }
+    }
+
+    async function runJobNow(jobId) {
+        showToast('正在执行任务...');
+
+        const result = await apiCall(`/api/auto-jobs/${jobId}/run`, { method: 'POST' });
+        if (result.success) {
+            showToast('执行完成: ' + result.message, 'success');
+            loadJobs();
+        } else {
+            showToast('执行失败: ' + result.error, 'danger');
+        }
+    }
+
+    function onScheduleTypeChange() {
+        const type = document.getElementById('schedule-type').value;
+        document.getElementById('interval-config').classList.toggle('d-none', type !== 'interval');
+        document.getElementById('cron-config').classList.toggle('d-none', type !== 'cron');
+    }
+
+    function onJobTypeChange() {
+        const type = document.getElementById('job-type').value;
+        document.getElementById('extract-tasks-option').classList.toggle('d-none', type !== 'ai_summary');
+    }
+</script>
+{% endblock %}

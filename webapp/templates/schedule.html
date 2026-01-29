@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+
+{% block title %}时间表 - QQ 聊天 AI 助手{% endblock %}
+
+{% block extra_css %}
+<style>
+    #calendar {
+        max-width: 100%;
+    }
+    .fc-event {
+        cursor: pointer;
+    }
+    .task-card {
+        border-left: 4px solid;
+        transition: all 0.2s;
+    }
+    .task-card:hover {
+        box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.1);
+    }
+    .task-card.priority-1 { border-left-color: #dc3545; }
+    .task-card.priority-2 { border-left-color: #fd7e14; }
+    .task-card.priority-3 { border-left-color: #ffc107; }
+    .task-card.priority-4 { border-left-color: #28a745; }
+    .task-card.priority-5 { border-left-color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-calendar-event"></i> 时间表</h2>
+    <div class="btn-group">
+        <button class="btn btn-outline-primary" onclick="switchView('calendar')">
+            <i class="bi bi-calendar3"></i> 日历视图
+        </button>
+        <button class="btn btn-outline-primary" onclick="switchView('list')">
+            <i class="bi bi-list-ul"></i> 列表视图
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 日历视图 -->
+    <div class="col-lg-8 mb-4" id="calendar-view">
+        <div class="card">
+            <div class="card-body">
+                <div id="calendar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 任务列表 -->
+    <div class="col-lg-4 mb-4" id="tasks-panel">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list-task"></i> 任务列表</span>
+                <select class="form-select form-select-sm w-auto" id="task-filter" onchange="loadTasks()">
+                    <option value="">全部</option>
+                    <option value="pending">待处理</option>
+                    <option value="in_progress">进行中</option>
+                    <option value="completed">已完成</option>
+                </select>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                <div id="tasks-list">
+                    <div class="text-center text-muted py-4">
+                        <div class="spinner-border" role="status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 列表视图（默认隐藏） -->
+<div class="card d-none" id="list-view">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> 所有任务
+    </div>
+    <div class="card-body">
+        <div id="all-tasks-list"></div>
+    </div>
+</div>
+
+<!-- 任务详情对话框 -->
+<div class="modal fade" id="taskModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-clipboard-check"></i> 任务详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="task-form">
+                    <input type="hidden" id="task-id">
+                    <div class="mb-3">
+                        <label class="form-label">任务标题</label>
+                        <input type="text" class="form-control" id="task-title" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">描述</label>
+                        <textarea class="form-control" id="task-description" rows="3" readonly></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">优先级</label>
+                            <select class="form-select" id="task-priority">
+                                <option value="1">P1 - 最高</option>
+                                <option value="2">P2 - 高</option>
+                                <option value="3">P3 - 中</option>
+                                <option value="4">P4 - 低</option>
+                                <option value="5">P5 - 最低</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="task-status">
+                                <option value="pending">待处理</option>
+                                <option value="in_progress">进行中</option>
+                                <option value="completed">已完成</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">截止时间</label>
+                        <input type="datetime-local" class="form-control" id="task-deadline">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">AI 分析</label>
+                        <div class="border rounded p-2 bg-light" id="task-analysis" style="white-space: pre-wrap; font-size: 0.9rem;"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">来源消息</label>
+                        <div class="border rounded p-2 bg-light" id="task-source" style="white-space: pre-wrap; font-size: 0.9rem;"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger me-auto" onclick="deleteTask()">
+                    <i class="bi bi-trash"></i> 删除
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveTask()">
+                    <i class="bi bi-check-lg"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let calendar;
+    let allTasks = [];
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initCalendar();
+        loadTasks();
+    });
+
+    function initCalendar() {
+        const calendarEl = document.getElementById('calendar');
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            locale: 'zh-cn',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            },
+            events: '/api/schedule/events',
+            eventClick: function(info) {
+                showTaskDetail(info.event.id);
+            },
+            eventDidMount: function(info) {
+                // 添加 tooltip
+                info.el.title = info.event.title;
+            }
+        });
+        calendar.render();
+    }
+
+    async function loadTasks() {
+        const status = document.getElementById('task-filter').value;
+        const url = status ? `/api/tasks?status=${status}` : '/api/tasks';
+
+        const data = await apiCall(url);
+        allTasks = data.tasks;
+        renderTasksList(data.tasks);
+        renderAllTasksList(data.tasks);
+    }
+
+    function renderTasksList(tasks) {
+        const container = document.getElementById('tasks-list');
+
+        if (tasks.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <p class="mt-2">暂无任务</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = tasks.map(task => `
+            <div class="card task-card priority-${task.priority} mb-2" onclick="showTaskDetail(${task.id})" style="cursor: pointer;">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">${task.title}</h6>
+                            <small class="text-muted">
+                                ${task.deadline ? '<i class="bi bi-clock"></i> ' + new Date(task.deadline).toLocaleString() : '无截止时间'}
+                            </small>
+                        </div>
+                        <div>
+                            <span class="badge bg-${getStatusColor(task.status)}">${getStatusText(task.status)}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderAllTasksList(tasks) {
+        const container = document.getElementById('all-tasks-list');
+
+        if (tasks.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <p class="mt-2">暂无任务</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>优先级</th>
+                            <th>任务</th>
+                            <th>截止时间</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tasks.map(task => `
+                            <tr>
+                                <td>
+                                    <span class="badge bg-${getPriorityColor(task.priority)}">P${task.priority}</span>
+                                </td>
+                                <td>
+                                    <strong>${task.title}</strong>
+                                    ${task.description ? `<br><small class="text-muted">${task.description.substring(0, 50)}...</small>` : ''}
+                                </td>
+                                <td>
+                                    ${task.deadline ? new Date(task.deadline).toLocaleString() : '-'}
+                                </td>
+                                <td>
+                                    <span class="badge bg-${getStatusColor(task.status)}">${getStatusText(task.status)}</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="showTaskDetail(${task.id})">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function showTaskDetail(taskId) {
+        const task = allTasks.find(t => t.id == taskId);
+        if (!task) return;
+
+        document.getElementById('task-id').value = task.id;
+        document.getElementById('task-title').value = task.title;
+        document.getElementById('task-description').value = task.description || '';
+        document.getElementById('task-priority').value = task.priority;
+        document.getElementById('task-status').value = task.status;
+        document.getElementById('task-deadline').value = task.deadline ? task.deadline.slice(0, 16) : '';
+        document.getElementById('task-analysis').textContent = task.ai_analysis || '无';
+        document.getElementById('task-source').textContent = task.source_message || '无';
+
+        const modal = new bootstrap.Modal(document.getElementById('taskModal'));
+        modal.show();
+    }
+
+    async function saveTask() {
+        const taskId = document.getElementById('task-id').value;
+        const data = {
+            priority: parseInt(document.getElementById('task-priority').value),
+            status: document.getElementById('task-status').value,
+            deadline: document.getElementById('task-deadline').value || null
+        };
+
+        const result = await apiCall(`/api/tasks/${taskId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+
+        if (result.success) {
+            showToast('任务已更新');
+            bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
+            loadTasks();
+            calendar.refetchEvents();
+        }
+    }
+
+    async function deleteTask() {
+        if (!confirm('确定要删除此任务吗？')) return;
+
+        const taskId = document.getElementById('task-id').value;
+        const result = await apiCall(`/api/tasks/${taskId}`, { method: 'DELETE' });
+
+        if (result.success) {
+            showToast('任务已删除');
+            bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
+            loadTasks();
+            calendar.refetchEvents();
+        }
+    }
+
+    function switchView(view) {
+        if (view === 'calendar') {
+            document.getElementById('calendar-view').classList.remove('d-none');
+            document.getElementById('tasks-panel').classList.remove('d-none');
+            document.getElementById('list-view').classList.add('d-none');
+        } else {
+            document.getElementById('calendar-view').classList.add('d-none');
+            document.getElementById('tasks-panel').classList.add('d-none');
+            document.getElementById('list-view').classList.remove('d-none');
+        }
+    }
+
+    function getStatusColor(status) {
+        const colors = {
+            'pending': 'warning',
+            'in_progress': 'primary',
+            'completed': 'success'
+        };
+        return colors[status] || 'secondary';
+    }
+
+    function getStatusText(status) {
+        const texts = {
+            'pending': '待处理',
+            'in_progress': '进行中',
+            'completed': '已完成'
+        };
+        return texts[status] || status;
+    }
+
+    function getPriorityColor(priority) {
+        const colors = {
+            1: 'danger',
+            2: 'warning',
+            3: 'info',
+            4: 'success',
+            5: 'secondary'
+        };
+        return colors[priority] || 'secondary';
+    }
+</script>
+{% endblock %}

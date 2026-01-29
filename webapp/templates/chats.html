@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+
+{% block title %}聊天监控 - QQ 聊天 AI 助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-chat-left-text"></i> 聊天监控</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChatModal">
+        <i class="bi bi-plus-lg"></i> 添加监控
+    </button>
+</div>
+
+<!-- 已监控的聊天列表 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-check"></i> 已监控的聊天
+    </div>
+    <div class="card-body">
+        <div id="monitored-chats-list">
+            <div class="text-center text-muted py-5">
+                <div class="spinner-border" role="status"></div>
+                <p class="mt-2">加载中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加监控对话框 -->
+<div class="modal fade" id="addChatModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> 添加聊天监控</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 加载可用聊天 -->
+                <div class="mb-3">
+                    <button class="btn btn-outline-primary" onclick="loadAvailableChats()">
+                        <span class="loading-spinner spinner-border spinner-border-sm me-1"></span>
+                        <i class="bi bi-arrow-clockwise"></i> 加载好友和群列表
+                    </button>
+                </div>
+
+                <!-- 搜索框 -->
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="search-chat" placeholder="搜索好友或群..."
+                           oninput="filterChats()">
+                </div>
+
+                <!-- 标签页 -->
+                <ul class="nav nav-tabs" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#friends-tab">
+                            <i class="bi bi-person"></i> 好友 <span class="badge bg-secondary" id="friends-count">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups-tab">
+                            <i class="bi bi-people"></i> 群聊 <span class="badge bg-secondary" id="groups-count">0</span>
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content mt-3">
+                    <!-- 好友列表 -->
+                    <div class="tab-pane fade show active" id="friends-tab">
+                        <div id="friends-list" class="list-group" style="max-height: 400px; overflow-y: auto;">
+                            <div class="text-center text-muted py-4">
+                                点击上方按钮加载好友列表
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 群聊列表 -->
+                    <div class="tab-pane fade" id="groups-tab">
+                        <div id="groups-list" class="list-group" style="max-height: 400px; overflow-y: auto;">
+                            <div class="text-center text-muted py-4">
+                                点击上方按钮加载群列表
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 消息查看对话框 -->
+<div class="modal fade" id="messagesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-chat-dots"></i> <span id="messages-chat-name">消息</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3 d-flex gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="generateSummary()">
+                        <i class="bi bi-file-text"></i> 生成总结
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm" onclick="analyzeTasks()">
+                        <i class="bi bi-list-task"></i> 提取任务
+                    </button>
+                </div>
+                <div id="messages-list" style="max-height: 500px; overflow-y: auto;">
+                    <div class="text-center text-muted py-4">
+                        <div class="spinner-border" role="status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let availableFriends = [];
+    let availableGroups = [];
+    let currentChatId = null;
+
+    document.addEventListener('DOMContentLoaded', loadMonitoredChats);
+
+    async function loadMonitoredChats() {
+        const data = await apiCall('/api/monitored-chats');
+        renderMonitoredChats(data.chats);
+    }
+
+    function renderMonitoredChats(chats) {
+        const container = document.getElementById('monitored-chats-list');
+
+        if (chats.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <p class="mt-2">暂无监控的聊天</p>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChatModal">
+                        <i class="bi bi-plus-lg"></i> 添加监控
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>名称</th>
+                            <th>类型</th>
+                            <th>ID</th>
+                            <th>状态</th>
+                            <th>最后获取</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${chats.map(chat => `
+                            <tr class="chat-item">
+                                <td>
+                                    <strong>${chat.name}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-${chat.chat_type === 2 ? 'primary' : 'success'}">
+                                        ${chat.chat_type === 2 ? '群聊' : '私聊'}
+                                    </span>
+                                </td>
+                                <td><code>${chat.peer_id}</code></td>
+                                <td>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox"
+                                               ${chat.enabled ? 'checked' : ''}
+                                               onchange="toggleChat(${chat.id})">
+                                    </div>
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        ${chat.last_fetch_time ? new Date(chat.last_fetch_time).toLocaleString() : '从未'}
+                                    </small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" onclick="viewMessages(${chat.id}, '${chat.name}')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" onclick="removeChat(${chat.id})">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    async function loadAvailableChats() {
+        const btn = event.target.closest('button');
+        btn.classList.add('loading');
+        btn.disabled = true;
+
+        try {
+            const data = await apiCall('/api/available-chats');
+
+            if (!data.success) {
+                showToast(data.error || '加载失败', 'danger');
+                return;
+            }
+
+            availableFriends = data.friends;
+            availableGroups = data.groups;
+
+            document.getElementById('friends-count').textContent = availableFriends.length;
+            document.getElementById('groups-count').textContent = availableGroups.length;
+
+            renderAvailableFriends(availableFriends);
+            renderAvailableGroups(availableGroups);
+
+            showToast(`已加载 ${availableFriends.length} 个好友，${availableGroups.length} 个群`);
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }
+    }
+
+    function renderAvailableFriends(friends) {
+        const container = document.getElementById('friends-list');
+        if (friends.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted py-4">没有好友</div>';
+            return;
+        }
+
+        container.innerHTML = friends.map(f => `
+            <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+               onclick="addChat(1, '${f.uin}', '${f.uid || ''}', '${f.name}'); return false;">
+                <div>
+                    <strong>${f.name}</strong>
+                    ${f.remark && f.remark !== f.nick ? `<small class="text-muted">(${f.nick})</small>` : ''}
+                    <br><small class="text-muted">QQ: ${f.uin}</small>
+                </div>
+                <span class="badge bg-${f.is_online ? 'success' : 'secondary'}">${f.is_online ? '在线' : '离线'}</span>
+            </a>
+        `).join('');
+    }
+
+    function renderAvailableGroups(groups) {
+        const container = document.getElementById('groups-list');
+        if (groups.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted py-4">没有群聊</div>';
+            return;
+        }
+
+        container.innerHTML = groups.map(g => `
+            <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+               onclick="addChat(2, '${g.group_code}', '', '${g.group_name}'); return false;">
+                <div>
+                    <strong>${g.group_name}</strong>
+                    <br><small class="text-muted">群号: ${g.group_code}</small>
+                </div>
+                <span class="badge bg-info">${g.member_count}/${g.max_member}</span>
+            </a>
+        `).join('');
+    }
+
+    function filterChats() {
+        const keyword = document.getElementById('search-chat').value.toLowerCase();
+
+        const filteredFriends = availableFriends.filter(f =>
+            f.name.toLowerCase().includes(keyword) ||
+            f.uin.includes(keyword) ||
+            (f.nick && f.nick.toLowerCase().includes(keyword))
+        );
+
+        const filteredGroups = availableGroups.filter(g =>
+            g.group_name.toLowerCase().includes(keyword) ||
+            g.group_code.includes(keyword)
+        );
+
+        renderAvailableFriends(filteredFriends);
+        renderAvailableGroups(filteredGroups);
+    }
+
+    async function addChat(chatType, peerId, peerUid, name) {
+        const result = await apiCall('/api/monitored-chats', {
+            method: 'POST',
+            body: JSON.stringify({
+                chat_type: chatType,
+                peer_id: peerId,
+                peer_uid: peerUid,
+                name: name
+            })
+        });
+
+        if (result.success) {
+            showToast(`已添加监控: ${name}`);
+            loadMonitoredChats();
+            bootstrap.Modal.getInstance(document.getElementById('addChatModal')).hide();
+        } else {
+            showToast(result.error || '添加失败', 'danger');
+        }
+    }
+
+    async function toggleChat(chatId) {
+        const result = await apiCall(`/api/monitored-chats/${chatId}/toggle`, { method: 'POST' });
+        if (result.success) {
+            showToast(result.enabled ? '已启用监控' : '已禁用监控');
+        }
+    }
+
+    async function removeChat(chatId) {
+        if (!confirm('确定要移除此监控吗？相关消息也会被删除。')) return;
+
+        const result = await apiCall(`/api/monitored-chats/${chatId}`, { method: 'DELETE' });
+        if (result.success) {
+            showToast('已移除监控');
+            loadMonitoredChats();
+        }
+    }
+
+    async function viewMessages(chatId, chatName) {
+        currentChatId = chatId;
+        document.getElementById('messages-chat-name').textContent = chatName;
+
+        const modal = new bootstrap.Modal(document.getElementById('messagesModal'));
+        modal.show();
+
+        const data = await apiCall(`/api/messages/${chatId}?per_page=100`);
+        renderMessages(data.messages);
+    }
+
+    function renderMessages(messages) {
+        const container = document.getElementById('messages-list');
+
+        if (messages.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted py-4">暂无消息</div>';
+            return;
+        }
+
+        container.innerHTML = messages.map(m => `
+            <div class="border-bottom py-2">
+                <div class="d-flex justify-content-between">
+                    <strong>${m.sender_name}</strong>
+                    <small class="text-muted">${new Date(m.msg_time).toLocaleString()}</small>
+                </div>
+                <p class="mb-0">${m.content || '<i class="text-muted">[无文本内容]</i>'}</p>
+            </div>
+        `).join('');
+    }
+
+    async function generateSummary() {
+        if (!currentChatId) return;
+
+        const btn = event.target.closest('button');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 生成中...';
+
+        try {
+            const result = await apiCall('/api/generate-summary', {
+                method: 'POST',
+                body: JSON.stringify({ chat_id: currentChatId, days: 1 })
+            });
+
+            if (result.success) {
+                showToast('总结已生成');
+                alert('AI 总结:\n\n' + result.summary);
+            } else {
+                showToast(result.error || '生成失败', 'danger');
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-file-text"></i> 生成总结';
+        }
+    }
+
+    async function analyzeTasks() {
+        if (!currentChatId) return;
+
+        const btn = event.target.closest('button');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 分析中...';
+
+        try {
+            const result = await apiCall('/api/analyze-tasks', {
+                method: 'POST',
+                body: JSON.stringify({ chat_id: currentChatId, days: 1 })
+            });
+
+            if (result.success) {
+                showToast(`已提取 ${result.tasks_count} 个任务`);
+            } else {
+                showToast(result.error || '分析失败', 'danger');
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-list-task"></i> 提取任务';
+        }
+    }
+</script>
+{% endblock %}
